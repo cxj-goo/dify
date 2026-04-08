@@ -1,0 +1,159 @@
+# .github/workflows/export-dify-images.yml
+name: Export Dify Docker Images
+
+on:
+  workflow_dispatch:  # 手动触发
+    inputs:
+      version:
+        description: 'Dify version tag'
+        required: false
+        default: '1.13.3'
+
+jobs:
+  export-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create export directory
+        run: mkdir -p dify-images/images
+
+      - name: Pull and save core images
+        run: |
+          # 核心必需镜像（无 profile 限制）
+          images=(
+            "busybox:latest"
+            "langgenius/dify-api:${{ github.event.inputs.version }}"
+            "langgenius/dify-web:${{ github.event.inputs.version }}"
+            "redis:6-alpine"
+            "langgenius/dify-sandbox:0.2.14"
+            "langgenius/dify-plugin-daemon:0.5.3-local"
+            "ubuntu/squid:latest"
+            "nginx:latest"
+            # 默认推荐的数据库和向量库
+            "postgres:15-alpine"
+            "semitechnologies/weaviate:1.27.0"
+          )
+          
+          for img in "${images[@]}"; do
+            echo "Pulling $img..."
+            docker pull "$img"
+            
+            # 生成安全的文件名
+            safe_name=$(echo "$img" | tr '/:@' '_')
+            echo "Saving to images/${safe_name}.tar..."
+            docker save "$img" -o "dify-images/images/${safe_name}.tar"
+          done
+
+      - name: Create load script
+        run: |
+          cat > dify-images/load-images.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          IMAGES_DIR="$SCRIPT_DIR/images"
+
+          echo "=========================================="
+          echo "Dify Docker Images Loader"
+          echo "=========================================="
+
+          # 检查 images 目录是否存在
+          if [ ! -d "$IMAGES_DIR" ]; then
+              echo "Error: images directory not found at $IMAGES_DIR"
+              exit 1
+          fi
+
+          # 统计 tar 文件数量
+          tar_count=$(find "$IMAGES_DIR" -name "*.tar" -type f | wc -l)
+          echo "Found $tar_count image files to load"
+          echo ""
+
+          # 加载所有镜像
+          loaded_count=0
+          for tar_file in "$IMAGES_DIR"/*.tar; do
+              if [ -f "$tar_file" ]; then
+                  filename=$(basename "$tar_file")
+                  echo "Loading: $filename"
+                  docker load -i "$tar_file"
+                  ((loaded_count++))
+                  echo "  ✓ Loaded ($loaded_count/$tar_count)"
+                  echo ""
+              fi
+          done
+
+          echo "=========================================="
+          echo "All images loaded successfully!"
+          echo "Total: $loaded_count images"
+          echo "=========================================="
+          echo ""
+          echo "You can now start Dify with:"
+          echo "  docker compose --profile postgresql --profile weaviate up -d"
+          echo ""
+          EOF
+
+          chmod +x dify-images/load-images.sh
+
+      - name: Create docker-compose wrapper script
+        run: |
+          cat > dify-images/start-dify.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+          echo "=========================================="
+          echo "Dify Quick Start Script"
+          echo "=========================================="
+          echo ""
+
+          # 首先加载镜像
+          echo "Step 1: Loading Docker images..."
+          bash "$SCRIPT_DIR/load-images.sh"
+          echo ""
+
+          # 检查 docker-compose.yml 是否存在
+          if [ ! -f "$SCRIPT_DIR/docker-compose.yml" ]; then
+              echo "Warning: docker-compose.yml not found in $SCRIPT_DIR"
+              echo "Please ensure you have the docker-compose.yml file in the same directory"
+              echo ""
+              echo "You can download it from: https://github.com/langgenius/dify"
+              exit 1
+          fi
+
+          # 启动服务
+          echo "Step 2: Starting Dify services..."
+          echo "Using profile: postgresql + weaviate"
+          echo ""
+          
+          cd "$SCRIPT_DIR"
+          docker compose --profile postgresql --profile weaviate up -d
+
+          echo ""
+          echo "=========================================="
+          echo "Dify is starting up!"
+          echo "=========================================="
+          echo ""
+          echo "Services will be available at:"
+          echo "  - Web UI: http://localhost"
+          echo "  - API: http://localhost/v1"
+          echo ""
+          echo "Check status with: docker compose ps"
+          echo "View logs with: docker compose logs -f"
+          echo ""
+          EOF
+
+          chmod +x dify-images/start-dify.sh
+
+      - name: Create README
+        run: |
+          cat > dify-images/README.md << 'EOF'
+          # Dify Docker Images Package
+
+          此压缩包包含启动 Dify 项目所需的所有 Docker 镜像。
+
+     
