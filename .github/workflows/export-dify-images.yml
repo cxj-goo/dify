@@ -156,4 +156,119 @@ jobs:
 
           此压缩包包含启动 Dify 项目所需的所有 Docker 镜像。
 
-     
+          ## 包含的镜像
+
+          ### 核心服务（必需）
+          - busybox:latest
+          - langgenius/dify-api:1.13.3
+          - langgenius/dify-web:1.13.3
+          - redis:6-alpine
+          - langgenius/dify-sandbox:0.2.14
+          - langgenius/dify-plugin-daemon:0.5.3-local
+          - ubuntu/squid:latest
+          - nginx:latest
+
+          ### 数据库（默认 PostgreSQL）
+          - postgres:15-alpine
+
+          ### 向量数据库（默认 Weaviate）
+          - semitechnologies/weaviate:1.27.0
+
+          ## 快速开始
+
+          ### 方法一：使用自动脚本（推荐）
+
+          ```bash
+          # 解压后进入目录
+          cd dify-images
+
+          # 执行启动脚本（自动加载镜像并启动服务）
+          ./start-dify.sh
+          ```
+
+          ### 方法二：手动操作
+
+          ```bash
+          # 1. 加载所有镜像
+          ./load-images.sh
+
+          # 2. 复制 docker-compose.yml 到当前目录（如需要）
+
+          # 3. 启动服务
+          docker compose --profile postgresql --profile weaviate up -d
+          ```
+
+          ## 文件说明
+
+          | 文件 | 说明 |
+          |------|------|
+          | `load-images.sh` | 加载所有 .tar 镜像文件到 Docker |
+          | `start-dify.sh` | 一键加载镜像并启动 Dify |
+          | `images/` | 包含所有 Docker 镜像的 .tar 文件 |
+          | `README.md` | 本说明文件 |
+
+          ## 注意事项
+
+          1. 确保已安装 Docker 和 Docker Compose
+          2. 需要准备 `.env` 配置文件（可从 Dify 官方仓库获取模板）
+          3. 如需使用其他数据库或向量数据库，请自行拉取对应镜像
+          4. 镜像文件较大，加载可能需要一些时间
+
+          ## 官方文档
+
+          - Dify 官网: https://dify.ai
+          - GitHub: https://github.com/langgenius/dify
+          - 文档: https://docs.dify.ai
+          EOF
+
+      - name: List exported images
+        run: |
+          echo "Exported images:"
+          ls -lh dify-images/images/
+          echo ""
+          echo "Total size:"
+          du -sh dify-images/images/
+
+      - name: Create release package
+        run: |
+          # 创建包含所有内容的压缩包
+          tar -czf dify-docker-images.tar.gz dify-images/
+          
+          # 同时创建 zip 格式（兼容性更好）
+          zip -r dify-docker-images.zip dify-images/
+          
+          echo "Package created:"
+          ls -lh dify-docker-images.*
+
+      - name: Upload artifacts (7 days retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dify-docker-images
+          path: |
+            dify-docker-images.tar.gz
+            dify-docker-images.zip
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Summary
+        run: |
+          echo "## ✅ Dify Docker Images Export Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 包含的镜像" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像 | 用途 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| busybox:latest | 权限初始化 |" >> $GITHUB_STEP_SUMMARY
+          echo "| langgenius/dify-api:1.13.3 | API 服务 |" >> $GITHUB_STEP_SUMMARY
+          echo "| langgenius/dify-web:1.13.3 | Web 前端 |" >> $GITHUB_STEP_SUMMARY
+          echo "| redis:6-alpine | 缓存/队列 |" >> $GITHUB_STEP_SUMMARY
+          echo "| langgenius/dify-sandbox:0.2.14 | 代码沙箱 |" >> $GITHUB_STEP_SUMMARY
+          echo "| langgenius/dify-plugin-daemon:0.5.3-local | 插件守护 |" >> $GITHUB_STEP_SUMMARY
+          echo "| ubuntu/squid:latest | SSRF 代理 |" >> $GITHUB_STEP_SUMMARY
+          echo "| nginx:latest | 反向代理 |" >> $GITHUB_STEP_SUMMARY
+          echo "| postgres:15-alpine | PostgreSQL 数据库 |" >> $GITHUB_STEP_SUMMARY
+          echo "| semitechnologies/weaviate:1.27.0 | Weaviate 向量库 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 下载信息" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifacts 保留期限**: 7 天" >> $GITHUB_STEP_SUMMARY
+          echo "- **压缩包格式**: tar.gz 和 zip" >> $GITHUB_STEP_SUMMARY
+          echo "- **使用方法**: 下载后执行 \`./start-dify.sh\`" >> $GITHUB_STEP_SUMMARY
